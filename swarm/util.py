@@ -168,3 +168,25 @@ def function_to_jsonschema(func) -> dict:
             parameters=ParamsModel.model_json_schema(),
         ),
     )
+
+
+def handoff(triage_agent, *agents, transfer_back: bool = True):
+    """
+    Transfer the conversation from triage_agent to candidate agents.
+
+    Args:
+        triage_agent: The agent that will transfer the conversation.
+        agents: The candidate agents that might handle the conversation next.
+    """
+
+    def transfer_back_to_triage():
+        """Call this if the user brings up a topic outside your purview, including escalating to human."""
+        return triage_agent
+
+    for agent in agents:
+        transfer_to = lambda: agent
+        transfer_to.__name__ = agent.name
+        triage_agent.functions.append(transfer_to)
+
+        if transfer_back:
+            agent.functions.append(transfer_back_to_triage)

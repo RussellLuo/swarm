@@ -1,4 +1,5 @@
 from swarm import Agent
+from swarm.util import handoff
 
 
 def process_refund(item_id, reason="NOT SPECIFIED"):
@@ -28,19 +29,4 @@ refunds_agent = Agent(
 )
 
 
-def transfer_back_to_triage():
-    """Call this function if a user is asking about a topic that is not handled by the current agent."""
-    return triage_agent
-
-
-def transfer_to_sales():
-    return sales_agent
-
-
-def transfer_to_refunds():
-    return refunds_agent
-
-
-triage_agent.functions = [transfer_to_sales, transfer_to_refunds]
-sales_agent.functions.append(transfer_back_to_triage)
-refunds_agent.functions.append(transfer_back_to_triage)
+handoff(triage_agent, sales_agent, refunds_agent)
