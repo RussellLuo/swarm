@@ -1,6 +1,9 @@
 import inspect
 from datetime import datetime
 
+from pydantic import Field, create_model
+from pydantic.fields import FieldInfo
+
 
 def debug_print(debug: bool, *args: str) -> None:
     if not debug:
@@ -85,3 +88,83 @@ def function_to_json(func) -> dict:
             },
         },
     }
+
+
+def function_to_jsonschema(func) -> dict:
+    """
+    Converts a function into a JSON Schema will be passed into Chat Completions `tools`.
+
+    Note that most of the code is borrowed from
+    https://github.com/MadcowD/ell/blob/82d626b52e5f7c72f29ecdc934e36beaaab258a3/src/ell/lmp/tool.py#L87-L119.
+
+    ## Example
+
+    Given the function in the following format:
+
+    ```python
+    def greet(name: str, age: int, location: str = "New York"):
+        '''Greets the user. Make sure to get their name and age before calling.'''
+    ```
+
+    Rewrite it as below:
+
+    ```python
+    from pydantic import Field
+
+    def greet(
+        name: str = Field(description="The name of the person"),
+        age: int = Field(description="The age of the person"),
+        location: str = Field(default="New York", description="The location of the person"),
+    ):
+        '''Greets the user. Make sure to get their name and age before calling.'''
+    ```
+
+    Then you will get a JSON schema with per-parameter descriptions.
+    """
+
+    # Construct the pydantic mdoel for the _under_fn's function signature parameters.
+    # 1. Get the function signature.
+
+    sig = inspect.signature(func)
+
+    # 2. Create a dictionary of field definitions for the Pydantic model
+    fields = {}
+    for param_name, param in sig.parameters.items():
+        # Skip *args and **kwargs
+        if param.kind in (
+            inspect.Parameter.VAR_POSITIONAL,
+            inspect.Parameter.VAR_KEYWORD,
+        ):
+            continue
+
+        # Determine the type annotation
+        if param.annotation == inspect.Parameter.empty:
+            raise ValueError(
+                f"Parameter {param_name} has no type annotation, and cannot be converted into a tool schema for OpenAI and other provisders. Should OpenAI produce a string or an integer, etc, for this parameter?"
+            )
+        annotation = param.annotation
+
+        # Determine the default value
+        default = param.default
+
+        # Check if the parameter has a Field with description
+        if isinstance(param.default, FieldInfo):
+            field = param.default
+            fields[param_name] = (annotation, field)
+        elif param.default != inspect.Parameter.empty:
+            fields[param_name] = (annotation, param.default)
+        else:
+            # If no default value, use Field without default
+            fields[param_name] = (annotation, Field(...))
+
+    # 3. Create the Pydantic model
+    model_name = f"{func.__name__}"
+    ParamsModel = create_model(model_name, **fields)
+    return dict(
+        type="function",
+        function=dict(
+            name=func.__name__,
+            description=func.__doc__ or "",
+            parameters=ParamsModel.model_json_schema(),
+        ),
+    )

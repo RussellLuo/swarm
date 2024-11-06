@@ -9,7 +9,7 @@ from openai import OpenAI
 
 
 # Local imports
-from .util import function_to_json, debug_print, merge_chunk
+from .util import function_to_jsonschema, debug_print, merge_chunk
 from .types import (
     Agent,
     AgentFunction,
@@ -47,7 +47,7 @@ class Swarm:
         messages = [{"role": "system", "content": instructions}] + history
         debug_print(debug, "Getting chat completion for...:", messages)
 
-        tools = [function_to_json(f) for f in agent.functions]
+        tools = [function_to_jsonschema(f) for f in agent.functions]
         # hide context_variables from model
         for tool in tools:
             params = tool["function"]["parameters"]
