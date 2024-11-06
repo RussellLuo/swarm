@@ -52,7 +52,7 @@ class Swarm:
         for tool in tools:
             params = tool["function"]["parameters"]
             params["properties"].pop(__CTX_VARS_NAME__, None)
-            if __CTX_VARS_NAME__ in params["required"]:
+            if __CTX_VARS_NAME__ in params.get("required", []):
                 params["required"].remove(__CTX_VARS_NAME__)
 
         create_params = {
@@ -63,8 +63,18 @@ class Swarm:
             "stream": stream,
         }
 
-        if tools:
-            create_params["parallel_tool_calls"] = agent.parallel_tool_calls
+        # Azure OpenAI API does not support `parallel_tool_calls` until 2024-08-01-preview.
+        # See https://learn.microsoft.com/en-us/azure/ai-services/openai/api-version-deprecation#changes-between-2024-09-01-preview-and-2024-08-01-preview.
+        #
+        # if tools:
+        #    create_params["parallel_tool_calls"] = agent.parallel_tool_calls
+
+        # Azure OpenAI API does not support `refusal` and null `function_call`.
+        for p in create_params["messages"]:
+            fc = p.get("function_call", "")
+            if fc is None:
+                p.pop("function_call", None)
+            p.pop("refusal", None)
 
         return self.client.chat.completions.create(**create_params)
 
@@ -104,9 +114,14 @@ class Swarm:
                 debug_print(debug, f"Tool {name} not found in function map.")
                 partial_response.messages.append(
                     {
+                        # OpenAI seems to support only `role`, `tool_call_id` and `content`.
+                        # See https://platform.openai.com/docs/guides/function-calling.
+                        #
+                        # Azure OpenAI supports one more parameter `name`.
+                        # See https://learn.microsoft.com/en-us/azure/ai-services/openai/how-to/function-calling.
                         "role": "tool",
                         "tool_call_id": tool_call.id,
-                        "tool_name": name,
+                        "name": name,
                         "content": f"Error: Tool {name} not found.",
                     }
                 )
@@ -124,9 +139,14 @@ class Swarm:
             result: Result = self.handle_function_result(raw_result, debug)
             partial_response.messages.append(
                 {
+                    # OpenAI seems to support only `role`, `tool_call_id` and `content`.
+                    # See https://platform.openai.com/docs/guides/function-calling.
+                    #
+                    # Azure OpenAI supports one more parameter `name`.
+                    # See https://learn.microsoft.com/en-us/azure/ai-services/openai/how-to/function-calling.
                     "role": "tool",
                     "tool_call_id": tool_call.id,
-                    "tool_name": name,
+                    "name": name,
                     "content": result.value,
                 }
             )
@@ -155,7 +175,8 @@ class Swarm:
 
             message = {
                 "content": "",
-                "sender": agent.name,
+                # No `sender` param is supported by model
+                # "sender": agent.name,
                 "role": "assistant",
                 "function_call": None,
                 "tool_calls": defaultdict(
@@ -191,7 +212,7 @@ class Swarm:
             message["tool_calls"] = list(
                 message.get("tool_calls", {}).values())
             if not message["tool_calls"]:
-                message["tool_calls"] = None
+                message.pop("tool_calls", None)
             debug_print(debug, "Received completion:", message)
             history.append(message)
 
@@ -267,10 +288,14 @@ class Swarm:
             )
             message = completion.choices[0].message
             debug_print(debug, "Received completion:", message)
-            message.sender = active_agent.name
-            history.append(
-                json.loads(message.model_dump_json())
-            )  # to avoid OpenAI types (?)
+            # No `sender` param is supported by model
+            # message.sender = active_agent.name
+            msg = json.loads(message.model_dump_json())
+            # Azure OpenAI API does not support empty `tool_calls`.
+            tc = msg.get('tool_calls')
+            if not tc:
+                msg.pop('tool_calls', None)
+            history.append(msg)  # to avoid OpenAI types (?)
 
             if not message.tool_calls or not execute_tools:
                 debug_print(debug, "Ending turn.")
