@@ -291,10 +291,11 @@ class Swarm:
             # No `sender` param is supported by model
             # message.sender = active_agent.name
             msg = json.loads(message.model_dump_json())
-            # Azure OpenAI API does not support empty `tool_calls`.
+            # Azure OpenAI API does not support empty `tool_calls` and `audio`.
             tc = msg.get('tool_calls')
             if not tc:
                 msg.pop('tool_calls', None)
+            msg.pop('audio', None)
             history.append(msg)  # to avoid OpenAI types (?)
 
             if not message.tool_calls or not execute_tools:
